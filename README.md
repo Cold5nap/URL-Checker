@@ -11,6 +11,7 @@
 ```bash
 # Терминал 1: Бэкенд
 cd backend
+cp .env.example .env
 npm install
 npm run start:dev
 
@@ -30,6 +31,8 @@ npm run dev
 ```bash
 docker compose up --build
 ```
+
+Переменные окружения заданы напрямую в `docker-compose.yml`.
 
 **URLs:**
 - Фронтенд: http://localhost

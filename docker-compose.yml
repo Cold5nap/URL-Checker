@@ -5,8 +5,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - '3000:3000'
-    env_file:
-      - ./backend/.env
+    environment:
+      - PORT=3000
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:4173,http://localhost
     restart: unless-stopped
 
   frontend:
