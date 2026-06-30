@@ -1,18 +1,22 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
 
   // Все REST-маршруты монтируются под /api
   app.setGlobalPrefix('api');
 
-  // CORS для Vite dev server (5173) и production preview (4173)
+  const corsOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim())
+    : ['http://localhost:5173', 'http://localhost:4173'];
+
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:4173'],
+    origin: corsOrigins,
     credentials: true,
   });
 
@@ -44,7 +48,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Server running on http://localhost:${port}`);
-  console.log(`Swagger docs at http://localhost:${port}/api/docs`);
+  logger.log(`Server running on http://localhost:${port}`);
+  logger.log(`Swagger docs at http://localhost:${port}/api/docs`);
 }
 bootstrap();

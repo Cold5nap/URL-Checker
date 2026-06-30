@@ -6,6 +6,7 @@ import {
   OnGatewayDisconnect,
   OnGatewayInit,
 } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -48,14 +49,20 @@ interface UrlUpdatePayload {
  * Это гарантирует, что ответы по старому jobId не меняют состояние интерфейса
  * при переключении между заданиями.
  */
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim())
+  : ['http://localhost:5173', 'http://localhost:4173'];
+
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:4173'],
+    origin: corsOrigins,
     credentials: true,
   },
   namespace: '/',
 })
 export class JobsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(JobsGateway.name);
+
   @WebSocketServer()
   server: Server;
 
@@ -84,11 +91,11 @@ export class JobsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   handleConnection(client: Socket): void {
-    console.log(`Client connected: ${client.id}`);
+    this.logger.log(`Client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket): void {
-    console.log(`Client disconnected: ${client.id}`);
+    this.logger.log(`Client disconnected: ${client.id}`);
   }
 
   /**
@@ -99,7 +106,7 @@ export class JobsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('join:job')
   handleJoinJob(client: Socket, jobId: string): void {
     client.join(jobId);
-    console.log(`Client ${client.id} joined job room: ${jobId}`);
+    this.logger.log(`Client ${client.id} joined job room: ${jobId}`);
   }
 
   /**
@@ -110,6 +117,6 @@ export class JobsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('leave:job')
   handleLeaveJob(client: Socket, jobId: string): void {
     client.leave(jobId);
-    console.log(`Client ${client.id} left job room: ${jobId}`);
+    this.logger.log(`Client ${client.id} left job room: ${jobId}`);
   }
 }

@@ -1,14 +1,6 @@
 import { useEffect } from 'react';
 import { useJobsStore } from '../store/jobs-store';
-import type { JobStatus } from '../types';
-
-const statusLabels: Record<JobStatus, string> = {
-  pending: 'Ожидает',
-  in_progress: 'Выполняется',
-  completed: 'Завершено',
-  cancelled: 'Отменено',
-  failed: 'Ошибка',
-};
+import { jobStatusLabels } from '../constants';
 
 /**
  * Боковая панель со списком заданий.
@@ -55,7 +47,7 @@ export function JobList() {
               <div className="job-list-header">
                 <span className="job-id">{job.id.slice(0, 8)}...</span>
                 <span className={`badge badge-${job.status}`}>
-                  {statusLabels[job.status]}
+                  {jobStatusLabels[job.status]}
                 </span>
               </div>
               <div className="job-list-meta">

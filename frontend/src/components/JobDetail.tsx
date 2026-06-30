@@ -1,21 +1,5 @@
 import { useJobsStore } from '../store/jobs-store';
-import type { JobStatus, UrlStatus } from '../types';
-
-const statusLabels: Record<JobStatus, string> = {
-  pending: 'Ожидает',
-  in_progress: 'Выполняется',
-  completed: 'Завершено',
-  cancelled: 'Отменено',
-  failed: 'Ошибка',
-};
-
-const urlStatusLabels: Record<UrlStatus, string> = {
-  pending: 'Ожидает',
-  in_progress: 'Проверка...',
-  success: 'Успех',
-  error: 'Ошибка',
-  cancelled: 'Отменено',
-};
+import { jobStatusLabels, urlStatusLabels } from '../constants';
 
 function formatDuration(ms?: number): string {
   if (ms == null) return '\u2014';
@@ -86,7 +70,7 @@ export function JobDetail() {
           <span className="job-id-full">ID: {activeJob.id}</span>
         </div>
         <span className={`badge badge-${activeJob.status}`}>
-          {statusLabels[activeJob.status]}
+          {jobStatusLabels[activeJob.status]}
         </span>
       </div>
 
@@ -118,7 +102,7 @@ export function JobDetail() {
       <div className="url-list">
         <h3>URL</h3>
         {activeJob.urls.map((urlEntry, idx) => (
-          <div key={idx} className={`url-item url-item-${urlEntry.status}`}>
+          <div key={`${urlEntry.url}-${idx}`} className={`url-item url-item-${urlEntry.status}`}>
             <div className="url-item-header">
               <span className="url-status-badge badge badge-${urlEntry.status}">
                 {urlStatusLabels[urlEntry.status]}

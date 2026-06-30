@@ -4,7 +4,7 @@ import type {
   JobListResponse,
 } from '../types';
 
-const BASE_URL = 'http://localhost:3000/api';
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {

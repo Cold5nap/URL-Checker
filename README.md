@@ -2,6 +2,34 @@
 
 Приложение для асинхронной проверки работоспособности URL с real-time обновлениями.
 
+## Быстрый старт
+
+### Разработка
+
+```bash
+# Терминал 1: Бэкенд
+cd backend
+npm install
+npm run start:dev    # http://localhost:3000
+
+# Терминал 2: Фронтенд
+cd frontend
+npm install
+npm run dev          # http://localhost:5173
+```
+
+### Продакшн (Docker)
+
+```bash
+docker compose up --build
+```
+
+- Бэкенд: http://localhost:3000
+- Фронтенд: http://localhost:80
+- Swagger документация: http://localhost:3000/api/docs
+
+---
+
 ```
                           ┌──────────────────────┐
                           │     React + Zustand   │
@@ -99,7 +127,7 @@ cancel() устанавливает job.status = CANCELLED
 └─────────────┘                      └─────────────┘                  └──────────┘
 ```
 
-Сервис发射ирует события через `@nestjs/event-emitter`. Шлюз подписывается на них в `afterInit()` и broadcast'ит в Socket.IO комнаты. Сервис **никогда не импортирует шлюз** — нулевой риск циклических зависимостей.
+Сервис эмитит события через `@nestjs/event-emitter`. Шлюз подписывается на них в `afterInit()` и broadcast'ит в Socket.IO комнаты. Сервис **никогда не импортирует шлюз** — нулевой риск циклических зависимостей.
 
 ### Модель конкурентности
 
@@ -135,7 +163,6 @@ cancel() устанавливает job.status = CANCELLED
 ## Структура проекта
 
 ```
-async-url-checker/
 ├── backend/                          # NestJS API
 │   ├── src/
 │   │   ├── main.ts                   # Bootstrap + Swagger + CORS + ValidationPipe
@@ -210,29 +237,3 @@ WebSocket полностью покрывает все три подпункта
 - ✅ Ответы по старому `jobId` никогда не влияют на UI (фильтрация через комнаты)
 
 Эндпоинт `GET /api/jobs/:id` по-прежнему доступен и используется для первоначальной загрузки деталей при выборе существующего задания из списка.
-
-## Быстрый старт
-
-### Разработка
-
-```bash
-# Терминал 1: Бэкенд
-cd backend
-npm install
-npm run start:dev    # http://localhost:3000
-
-# Терминал 2: Фронтенд
-cd frontend
-npm install
-npm run dev          # http://localhost:5173
-```
-
-### Продакшн (Docker)
-
-```bash
-docker compose up --build
-```
-
-- Бэкенд: http://localhost:3000
-- Фронтенд: http://localhost:80
-- Swagger документация: http://localhost:3000/api/docs

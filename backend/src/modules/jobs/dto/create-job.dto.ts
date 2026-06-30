@@ -1,4 +1,4 @@
-import { IsArray, IsString, IsUrl, ArrayNotEmpty, MinLength } from 'class-validator';
+import { IsArray, IsString, ArrayNotEmpty, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateJobDto {
