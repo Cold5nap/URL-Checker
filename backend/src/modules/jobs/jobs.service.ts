@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { v4 as uuidv4 } from 'uuid';
 import { JobStatus, UrlStatus } from '../../common/enums/status.enum';
-import { Job, JobListItem } from './interfaces/job.interface';
+import { Job, JobListItem, UrlResult } from './interfaces/job.interface';
 
 /**
  * Promise-based семафор для ограничения конкурентности.
@@ -161,7 +161,7 @@ export class JobsService {
   /**
    * Отменяет задание.
    *
-   * 1. Меняет статус задания на CANCELLED (снапшот для processJob).
+   * 1. Меняет статус задания на CANCELLED.
    * 2. PENDING URL-ы сразу помечаются как CANCELLED.
    * 3. IN_PROGRESS URL-ы — AbortController.abort() прервёт HEAD-запросы и delay().
    *    processJob сам доставит им статус CANCELLED после прерывания.
@@ -208,22 +208,13 @@ export class JobsService {
   /**
    * Фоновая обработка задания.
    *
-   * Для каждого PENDING URL:
-   *   1. Помечает IN_PROGRESS, оповещает клиентов.
-   *   2. Выполняет HEAD-запрос.
-   *   3. Искусственная задержка 0–10 секунд (прерываемая при отмене).
-   *   4. После задержки проверяет, не отменено ли задание:
-   *        - если отменено → CANCELLED
-   *        - если ошибка → ERROR
-   *        - успех → SUCCESS
-   *   5. Оповещает клиентов о результате.
+   * URL проходят стандартный цикл: PENDING → IN_PROGRESS → SUCCESS | ERROR | CANCELLED.
+   * Статус задания: PENDING → IN_PROGRESS → COMPLETED.
    *
    * Конкурентность — не более 5 одновременных HEAD-запросов (Semaphore(5)).
-   * Несколько заданий могут обрабатываться одновременно.
    *
-   * Проверка отмены (`isCancelled`) читает статус из Map при каждом вызове,
-   * поэтому cancel() с любого потока будет обнаружен. Дополнительно проверяется
-   * abortController.signal.aborted — на случай, если прерывание пришло через сигнал.
+   * При отмене (cancel) AbortController прерывает активные fetch + delay,
+   * isCancelled возвращает true, URL получают CANCELLED.
    */
   private async processJob(jobId: string): Promise<void> {
     const job = this.jobs.get(jobId);
@@ -236,106 +227,102 @@ export class JobsService {
     this.eventEmitter.emit('job.updated', { jobId, status: job.status });
 
     const pendingUrls = job.urls.filter((u) => u.status === UrlStatus.PENDING);
+    if (pendingUrls.length === 0) {
+      job.status = JobStatus.COMPLETED;
+      this.eventEmitter.emit('job.updated', { jobId, status: job.status });
+      this.abortControllers.delete(jobId);
+      return;
+    }
+
     const semaphore = new Semaphore(5);
 
-    /**
-     * Проверка, отменено ли задание.
-     *
-     * Читает статус из Map (не из замыкания), чтобы гарантированно увидеть
-     * изменения, сделанные cancel(). Дополнительно проверяет AbortSignal —
-     * если отмена произошла через controller.abort(), это тоже будет обнаружено.
-     *
-     * Вызывается между каждой асинхронной операцией (fetch, delay),
-     * чтобы как можно раньше остановить обработку при отмене.
-     */
     const isCancelled = (): boolean => {
       const current = this.jobs.get(jobId);
       return !current || current.status === JobStatus.CANCELLED || abortController.signal.aborted;
     };
 
+    const markUrlFinal = (urlEntry: UrlResult, status: UrlStatus, error?: string) => {
+      urlEntry.status = status;
+      urlEntry.finishedAt = new Date().toISOString();
+      if (urlEntry.startedAt) {
+        urlEntry.duration = new Date(urlEntry.finishedAt).getTime() - new Date(urlEntry.startedAt).getTime();
+      }
+      if (error) urlEntry.error = error;
+      this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
+    };
+
     const promises = pendingUrls.map((urlEntry) =>
       semaphore.run(async () => {
-        // Проверка перед началом работы — задание могло быть отменено
-        // до того, как семафор выделил слот
-        if (isCancelled()) {
-          urlEntry.status = UrlStatus.CANCELLED;
-          urlEntry.finishedAt = new Date().toISOString();
-          if (urlEntry.startedAt) {
-            urlEntry.duration = new Date(urlEntry.finishedAt).getTime() - new Date(urlEntry.startedAt).getTime();
-          }
-          this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
-          return;
-        }
-
-        urlEntry.status = UrlStatus.IN_PROGRESS;
-        urlEntry.startedAt = new Date().toISOString();
-        this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
-
-        let httpStatus: number | undefined;
-        let fetchError: string | undefined;
-
         try {
-          const response = await fetch(urlEntry.url, {
-            method: 'HEAD',
-            signal: abortController.signal,
-          });
-          httpStatus = response.status;
-        } catch (err) {
-          // Если fetch был прерван из-за отмены — помечаем CANCELLED
           if (isCancelled()) {
-            urlEntry.status = UrlStatus.CANCELLED;
+            markUrlFinal(urlEntry, UrlStatus.CANCELLED);
+            return;
+          }
+
+          urlEntry.status = UrlStatus.IN_PROGRESS;
+          urlEntry.startedAt = new Date().toISOString();
+          this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
+
+          let httpStatus: number | undefined;
+          let fetchError: string | undefined;
+
+          try {
+            const response = await fetch(urlEntry.url, {
+              method: 'HEAD',
+              signal: abortController.signal,
+            });
+            httpStatus = response.status;
+          } catch (err) {
+            if (isCancelled()) {
+              markUrlFinal(urlEntry, UrlStatus.CANCELLED);
+              return;
+            }
+            fetchError = err instanceof Error ? err.message : 'Unknown error';
+          }
+
+          if (isCancelled()) {
+            markUrlFinal(urlEntry, UrlStatus.CANCELLED);
+            return;
+          }
+
+          await delay(Math.floor(Math.random() * 10001), abortController.signal);
+
+          if (isCancelled()) {
+            markUrlFinal(urlEntry, UrlStatus.CANCELLED);
+          } else if (fetchError) {
+            markUrlFinal(urlEntry, UrlStatus.ERROR, fetchError);
+          } else {
+            urlEntry.httpStatus = httpStatus;
+            urlEntry.status = UrlStatus.SUCCESS;
             urlEntry.finishedAt = new Date().toISOString();
             if (urlEntry.startedAt) {
               urlEntry.duration = new Date(urlEntry.finishedAt).getTime() - new Date(urlEntry.startedAt).getTime();
             }
             this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
-            return;
           }
-          fetchError = err instanceof Error ? err.message : 'Unknown error';
+        } catch (err) {
+          markUrlFinal(urlEntry, UrlStatus.ERROR, err instanceof Error ? err.message : 'Unexpected error');
         }
-
-        // Проверка после fetch — отмена могла прийти между fetch и этой проверкой
-        if (isCancelled()) {
-          urlEntry.status = UrlStatus.CANCELLED;
-          urlEntry.finishedAt = new Date().toISOString();
-          if (urlEntry.startedAt) {
-            urlEntry.duration = new Date(urlEntry.finishedAt).getTime() - new Date(urlEntry.startedAt).getTime();
-          }
-          this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
-          return;
-        }
-
-        // Искусственная задержка (по заданию: 0–10 секунд перед сохранением результата).
-        // Задержка прерываемая — при отмене delay() резолвится досрочно.
-        await delay(Math.floor(Math.random() * 10001), abortController.signal);
-
-        // После задержки — финальное решение о статусе URL
-        if (isCancelled()) {
-          urlEntry.status = UrlStatus.CANCELLED;
-        } else if (fetchError) {
-          urlEntry.status = UrlStatus.ERROR;
-          urlEntry.error = fetchError;
-        } else {
-          urlEntry.httpStatus = httpStatus;
-          urlEntry.status = UrlStatus.SUCCESS;
-        }
-
-        urlEntry.finishedAt = new Date().toISOString();
-        if (urlEntry.startedAt) {
-          urlEntry.duration = new Date(urlEntry.finishedAt).getTime() - new Date(urlEntry.startedAt).getTime();
-        }
-
-        this.eventEmitter.emit('job.url.updated', { jobId, ...urlEntry });
       }),
     );
 
-    // Ждём завершения обработки всех URL
     await Promise.allSettled(promises);
 
-    // Если задание не было отменено — помечаем как COMPLETED
+    // Safety check: если какой-то URL завис в не-финальном статусе
+    for (const urlEntry of job.urls) {
+      if (urlEntry.status !== UrlStatus.SUCCESS && urlEntry.status !== UrlStatus.ERROR && urlEntry.status !== UrlStatus.CANCELLED) {
+        markUrlFinal(urlEntry, UrlStatus.ERROR, 'URL was left in non-final state');
+      }
+    }
+
     if (!isCancelled()) {
       job.status = JobStatus.COMPLETED;
-      this.eventEmitter.emit('job.updated', { jobId, status: job.status });
+      this.eventEmitter.emit('job.updated', {
+        jobId,
+        status: job.status,
+        successCount: job.urls.filter((u) => u.status === UrlStatus.SUCCESS).length,
+        errorCount: job.urls.filter((u) => u.status === UrlStatus.ERROR).length,
+      });
     }
 
     this.abortControllers.delete(jobId);
