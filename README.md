@@ -2,21 +2,28 @@
 
 Приложение для асинхронной проверки работоспособности URL с real-time обновлениями.
 
+![UI](docs/ui.png)
+
 ## Быстрый старт
 
-### Разработка
+### Разработка (без Docker)
 
 ```bash
 # Терминал 1: Бэкенд
 cd backend
 npm install
-npm run start:dev    # http://localhost:3000
+npm run start:dev
 
 # Терминал 2: Фронтенд
 cd frontend
 npm install
-npm run dev          # http://localhost:5173
+npm run dev
 ```
+
+**URLs:**
+- Фронтенд: http://localhost:5173
+- API: http://localhost:3000/api
+- Swagger: http://localhost:3000/api/docs
 
 ### Продакшн (Docker)
 
@@ -24,9 +31,10 @@ npm run dev          # http://localhost:5173
 docker compose up --build
 ```
 
-- Бэкенд: http://localhost:3000
-- Фронтенд: http://localhost:80
-- Swagger документация: http://localhost:3000/api/docs
+**URLs:**
+- Фронтенд: http://localhost
+- API: http://localhost/api
+- Swagger: http://localhost/api/docs
 
 ---
 
